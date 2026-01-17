@@ -8,66 +8,30 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
-      
-      :root {
-        --accent: #14b8a6;
-        --accent-glow: rgba(20, 184, 166, 0.15);
-      }
-
+      :root { --accent:#14b8a6; --accent-glow:rgba(20,184,166,.15); }
       body {
         font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
         scroll-behavior: smooth;
         background-color: #050505;
         color: #f8fafc;
       }
-
-      .scrollbar-hide::-webkit-scrollbar {
-        display: none;
-      }
-      
+      .scrollbar-hide::-webkit-scrollbar { display:none; }
       .glass-panel {
         background: rgba(15, 15, 18, 0.6);
         backdrop-filter: blur(20px);
         border: 1px solid rgba(255, 255, 255, 0.06);
         box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
       }
-
-      @keyframes fade-up {
-        from { opacity: 0; transform: translateY(16px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-
-      .animate-fade-up {
-        animation: fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      }
-
-      @keyframes flow {
-        0% { transform: translateX(0); }
-        100% { transform: translateX(-50%); }
-      }
-
-      .animate-flow {
-        animation: flow 20s linear infinite;
-        width: max-content;
-      }
-
-      .hero-gradient {
-        background: radial-gradient(circle at 50% -20%, rgba(20, 184, 166, 0.15), transparent 70%);
-      }
+      @keyframes fade-up { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+      .animate-fade-up { animation: fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+      @keyframes flow { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+      .animate-flow { animation: flow 20s linear infinite; width: max-content; }
+      .hero-gradient { background: radial-gradient(circle at 50% -20%, rgba(20, 184, 166, 0.15), transparent 70%); }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
-  }
-}
-</script>
-</head>
+  </head>
   <body class="selection:bg-teal-500/30">
     <div id="root"></div>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>
+
