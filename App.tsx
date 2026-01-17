@@ -19,9 +19,10 @@ import {
   Settings2,
   Layers,
   HelpCircle,
-  Send
+  Send,
+  User
 } from 'lucide-react';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality } from "@google/genai";
 import { Scenario, CapturedData, DemoStep } from './types';
 
 // --- Constants ---
@@ -82,21 +83,28 @@ const SCENARIOS: Scenario[] = [
   }
 ];
 
-// --- Audio Helpers ---
+// --- Helpers ---
 
-function decode(base64: string): Uint8Array {
+function decode(base64: string) {
   const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
 }
 
-async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
@@ -115,13 +123,12 @@ const CodifyLogo = ({ className = "w-8 h-8" }: { className?: string }) => (
   </svg>
 );
 
-const TypewriterText = ({ text, totalDuration, onComplete }: { text: string; totalDuration: number; onComplete?: () => void }) => {
+const TypewriterText = ({ text, duration, onComplete }: { text: string; duration?: number; onComplete?: () => void }) => {
   const [displayedText, setDisplayedText] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
 
-  const speed = useMemo(() => {
-    return (totalDuration * 1000) / text.length;
-  }, [totalDuration, text.length]);
+  // Speed sync: duration (sec) -> ms / chars
+  const speed = duration ? (duration * 1000) / text.length : 20;
 
   useEffect(() => {
     if (currentIndex < text.length) {
@@ -188,12 +195,11 @@ export default function App() {
   });
   
   const [isAudioLoading, setIsAudioLoading] = useState(false);
-  const [lastAudioDuration, setLastAudioDuration] = useState(0);
-  const [isAudioGenerating, setIsAudioGenerating] = useState(false);
+  const [currentAudioDuration, setCurrentAudioDuration] = useState<number>(0);
   const [manualInput, setManualInput] = useState('');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const outputAudioCtxRef = useRef<AudioContext | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   
   const scenario = useMemo(() => 
     SCENARIOS.find(s => s.id === selectedScenarioId) || SCENARIOS[0]
@@ -206,25 +212,27 @@ export default function App() {
         behavior: 'smooth'
       });
     }
-  }, [transcript, isAudioLoading, isAudioGenerating]);
+  }, [transcript, isAudioLoading]);
 
-  const generateTTS = async (text: string) => {
+  // Handle Speech Generation via Gemini Neural Engine (Defaulted to Puck)
+  const speakText = async (text: string): Promise<{ duration: number; playPromise: Promise<void> } | undefined> => {
     try {
-      setIsAudioGenerating(true);
-      setIsAudioLoading(true);
-      if (!outputAudioCtxRef.current) {
-        outputAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
       }
+      
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') await ctx.resume();
 
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say this professionally: ${text}` }] }],
+        contents: [{ parts: [{ text }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
+              prebuiltVoiceConfig: { voiceName: 'Puck' }, // Fixed to the Puck high-fidelity voice
             },
           },
         },
@@ -234,28 +242,36 @@ export default function App() {
       if (base64Audio) {
         const audioBuffer = await decodeAudioData(
           decode(base64Audio),
-          outputAudioCtxRef.current,
+          ctx,
           24000,
-          1
+          1,
         );
-        
-        const source = outputAudioCtxRef.current.createBufferSource();
+        const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(outputAudioCtxRef.current.destination);
-        
-        setLastAudioDuration(audioBuffer.duration);
-        setIsAudioLoading(false);
-        
+        source.connect(ctx.destination);
         source.start();
-        return audioBuffer.duration;
+        
+        const playPromise = new Promise<void>((resolve) => {
+          source.onended = () => resolve();
+        });
+
+        return { duration: audioBuffer.duration, playPromise };
       }
-    } catch (err) {
-      console.error("TTS generation failed", err);
-      setIsAudioLoading(false);
-    } finally {
-      setIsAudioGenerating(false);
+    } catch (error) {
+      console.error("Neural TTS Error:", error);
     }
-    return 0;
+  };
+
+  const processAgentResponse = async (text: string) => {
+    setIsAudioLoading(true);
+    const result = await speakText(text);
+    if (result) {
+      setCurrentAudioDuration(result.duration);
+    } else {
+      setCurrentAudioDuration(0);
+    }
+    setIsAudioLoading(false);
+    if (result) await result.playPromise;
   };
 
   const startDemo = async () => {
@@ -264,7 +280,7 @@ export default function App() {
     const initialMsg = scenario.steps[0];
     setTranscript([initialMsg]);
     setCapturedData({ name: '', phone: 'Simulation Mode', intent: '', dateTime: '', notes: '', leadScore: 'Low' });
-    await generateTTS(initialMsg.text);
+    await processAgentResponse(initialMsg.text);
   };
 
   const nextStep = async (manualValue?: string) => {
@@ -273,7 +289,6 @@ export default function App() {
       const agentStep = scenario.steps[currentStepIndex + 2];
       
       const userMessage = manualValue || userStep.text;
-      
       setTranscript(prev => [...prev, { ...userStep, text: userMessage }]);
       
       if (userStep.fieldToUpdate) {
@@ -288,7 +303,7 @@ export default function App() {
       if (agentStep) {
         setTimeout(async () => {
           setTranscript(prev => [...prev, agentStep]);
-          await generateTTS(agentStep.text);
+          await processAgentResponse(agentStep.text);
           if (agentStep.fieldToUpdate) {
             setCapturedData(prev => ({
               ...prev,
@@ -307,6 +322,7 @@ export default function App() {
     setTranscript([]);
     setCurrentStepIndex(0);
     setIsAudioLoading(false);
+    setCurrentAudioDuration(0);
     setManualInput('');
   };
 
@@ -328,9 +344,9 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <div className="bg-teal-500/10 border-b border-teal-500/20 py-3">
           <div className="max-w-7xl mx-auto px-6 flex items-center justify-center gap-3">
-            <Info size={14} className="text-teal-500 shrink-0" />
-            <p className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-teal-500 text-center">
-              Disclaimer: This is just a showcase—the real product is far more comprehensive.
+            <Zap size={14} className="text-teal-500 shrink-0 fill-teal-500" />
+            <p className="text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] text-teal-500 text-center">
+              Puck Neural Voice Engine • Synchronized UI Output
             </p>
           </div>
         </div>
@@ -343,7 +359,7 @@ export default function App() {
                   AI <span className="text-teal-500">Voice Agent</span> Showcase
                 </h1>
                 <p className="text-slate-400 text-lg max-w-xl leading-relaxed">
-                  Test our conversational engine. Experience high-fidelity neural voices paired with complex logic paths and real-time data capture.
+                  Experience studio-quality neural voices synchronized with real-time text generation for enterprise lead automation.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -376,8 +392,13 @@ export default function App() {
                       {isCalling && <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-teal-500 animate-ping opacity-75"></div>}
                     </div>
                     <span className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-                      {isCalling ? 'Active Session' : 'Ready to Start'}
+                      {isCalling ? 'Session Active' : 'Simulator Ready'}
                     </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="px-3 py-1 bg-teal-500/10 rounded-full border border-teal-500/20">
+                      <span className="text-[9px] font-black text-teal-500 uppercase tracking-widest">Neural Mode: High fidelity</span>
+                    </div>
                   </div>
                 </div>
 
@@ -387,27 +408,20 @@ export default function App() {
                       <div className="w-24 h-24 bg-teal-500/10 rounded-full flex items-center justify-center text-teal-500 mb-8 border border-teal-500/20 shadow-inner">
                         <Phone size={40} />
                       </div>
-                      <h3 className="text-3xl font-black mb-3 tracking-tight">Launch Interaction</h3>
+                      <h3 className="text-3xl font-black mb-3 tracking-tight">Launch Simulator</h3>
                       <p className="text-slate-500 mb-6 max-w-sm text-lg leading-relaxed italic">
-                        Experience the <span className="text-white font-bold">{scenario.title}</span> scenario.
+                        Experience the <span className="text-white font-bold">{scenario.title}</span> scenario with our flagship neural agent.
                       </p>
                       
-                      <div className="max-w-md mx-auto mb-10 p-6 rounded-2xl bg-white/[0.02] border border-white/5 space-y-3">
-                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-500">Scenario Purpose</div>
-                        <p className="text-slate-400 text-sm leading-relaxed text-center font-medium">
-                          {scenario.description.replace('Purpose: ', '')}
-                        </p>
-                      </div>
-
                       <button 
                         onClick={startDemo}
                         className="bg-white text-black px-12 py-5 rounded-2xl font-black hover:bg-teal-500 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center gap-4 shadow-xl shadow-white/5"
                       >
-                        <Play size={24} fill="currentColor" /> Start Voice Demo
+                        <Play size={24} fill="currentColor" /> Start Voice Interaction
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-10">
+                    <div className="space-y-10 pb-4">
                       {transcript.map((msg, i) => {
                         const isLast = i === transcript.length - 1;
                         const isAgent = msg.sender === 'agent';
@@ -422,35 +436,11 @@ export default function App() {
                                       <div className="w-6 h-6 bg-teal-500 rounded-lg flex items-center justify-center shadow-lg shadow-teal-500/20">
                                         <CodifyLogo className="w-3.5 h-3.5 text-black" />
                                       </div>
-                                      {(isAudioLoading || !isLast) && isAgent && isLast && (
-                                        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-teal-400 rounded-full border-2 border-black animate-pulse" />
-                                      )}
                                     </div>
-                                    <div className="flex flex-col">
-                                      <span className={`text-[10px] font-black uppercase tracking-[0.15em] text-teal-500 bg-teal-500/10 px-2.5 py-1 rounded-md border border-teal-500/20 shadow-sm inline-flex items-center gap-2 ${isLast ? 'animate-badge-pulse' : ''}`}>
-                                        Agent Alpha
-                                        {isLast && isAgent && !isAudioLoading && (
-                                          <div className="w-1.5 h-1.5 bg-teal-500 rounded-full animate-ping" />
-                                        )}
-                                      </span>
-                                    </div>
-                                    {isAudioLoading && i === transcript.length - 1 && isAgent && (
-                                      <div className="flex gap-1 items-center ml-1">
-                                        {[0, 1, 2].map(dot => (
-                                          <div key={dot} className="w-1.5 h-1.5 bg-teal-500/40 rounded-full animate-bounce" style={{ animationDelay: `${0.15 * dot}s` }} />
-                                        ))}
-                                      </div>
-                                    )}
+                                    <span className={`text-[10px] font-black uppercase tracking-[0.15em] text-teal-500 bg-teal-500/10 px-2.5 py-1 rounded-md border border-teal-500/20 shadow-sm inline-flex items-center gap-2 ${isLast ? 'animate-badge-pulse' : ''}`}>
+                                      Agent Puck
+                                    </span>
                                   </div>
-                                  {!isAudioLoading && (
-                                    <button 
-                                      onClick={() => generateTTS(msg.text)}
-                                      className="p-2 rounded-xl hover:bg-white/5 text-slate-600 hover:text-teal-500 transition-all group"
-                                      disabled={isAudioGenerating}
-                                    >
-                                      <Volume2 size={15} className="group-active:scale-90 transition-transform" />
-                                    </button>
-                                  )}
                                 </div>
                               )}
 
@@ -462,12 +452,13 @@ export default function App() {
                                 <p className="text-base md:text-[1.05rem] leading-relaxed tracking-tight whitespace-pre-wrap">
                                   {isAgent && isLast ? (
                                     isAudioLoading ? (
-                                      <span className="opacity-0">{msg.text}</span>
+                                      <div className="flex gap-2 items-center py-1">
+                                         {[0, 1, 2].map(dot => (
+                                          <div key={dot} className="w-2 h-2 bg-teal-500/40 rounded-full animate-bounce" style={{ animationDelay: `${0.15 * dot}s` }} />
+                                        ))}
+                                      </div>
                                     ) : (
-                                      <TypewriterText 
-                                        text={msg.text} 
-                                        totalDuration={lastAudioDuration || 2} 
-                                      />
+                                      <TypewriterText text={msg.text} duration={currentAudioDuration} />
                                     )
                                   ) : (
                                     msg.text
@@ -491,7 +482,7 @@ export default function App() {
                             <MessageSquare size={24} />
                           </div>
                           <div className="space-y-1">
-                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Next Dialogue Interaction</div>
+                            <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Call Trigger</div>
                             <div className="text-base font-bold text-white italic tracking-tight leading-snug">"{scenario.steps[currentStepIndex + 1].text}"</div>
                           </div>
                         </div>
@@ -504,7 +495,7 @@ export default function App() {
                                 value={manualInput}
                                 onChange={(e) => setManualInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && manualInput && nextStep(manualInput)}
-                                placeholder="Type response..."
+                                placeholder="Type your response..."
                                 className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-teal-500 transition-colors"
                               />
                               <button 
@@ -515,9 +506,7 @@ export default function App() {
                                 <Send size={18} />
                               </button>
                             </div>
-                          ) : null}
-                          
-                          {!currentStep?.isInput ? (
+                          ) : (
                              <button 
                                onClick={() => nextStep()}
                                disabled={isAudioLoading}
@@ -527,33 +516,20 @@ export default function App() {
                                    : 'bg-teal-500 text-black hover:bg-white shadow-xl shadow-teal-500/20 hover:-translate-y-0.5'
                                }`}
                              >
-                               {isAudioLoading ? 'Processing...' : 'Send Response'} 
+                               {isAudioLoading ? 'Synthesizing...' : 'Respond Now'} 
                                {!isAudioLoading && <ChevronRight size={22} className="group-hover:translate-x-1 transition-transform" />}
-                             </button>
-                          ) : (
-                             <button 
-                               onClick={() => nextStep()}
-                               disabled={isAudioLoading}
-                               className="px-6 py-4 rounded-2xl font-bold bg-white/5 text-slate-400 hover:text-white transition-all text-sm border border-white/10"
-                             >
-                               Skip to default
                              </button>
                           )}
                         </div>
                       </div>
                     ) : (
                       <div className="text-center py-4 animate-message">
-                        <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-500 font-bold mb-6">
-                          <CheckCircle2 size={20} /> Interaction Journey Complete
-                        </div>
-                        <div className="block">
-                          <button 
-                            onClick={() => resetDemo()} 
-                            className="text-sm font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-all underline decoration-teal-500/30 hover:decoration-teal-500 underline-offset-8"
-                          >
-                            Restart Showcase
-                          </button>
-                        </div>
+                        <button 
+                          onClick={() => resetDemo()} 
+                          className="text-sm font-bold uppercase tracking-widest text-slate-500 hover:text-white transition-all underline decoration-teal-500/30 hover:decoration-teal-500 underline-offset-8"
+                        >
+                          End Session & Restart
+                        </button>
                       </div>
                     )}
                   </div>
@@ -562,9 +538,9 @@ export default function App() {
 
               <div className="grid md:grid-cols-3 gap-5">
                 {[
-                  { label: 'Neural Fidelity', value: 'Studio', icon: Volume2, detail: 'Clone Voice quality' },
-                  { label: 'Response', value: '< 200ms', icon: RefreshCcw, detail: 'Average latency' },
-                  { label: 'Safety', value: 'Level 4', icon: ShieldCheck, detail: 'PII Scrubbing enabled' },
+                  { label: 'Audio Clarity', value: 'Studio HD', icon: Volume2, detail: 'High-bitrate PCM' },
+                  { label: 'Voice Profile', value: 'Puck', icon: User, detail: 'Neural Enterprise' },
+                  { label: 'Data Output', value: 'Structured', icon: ShieldCheck, detail: 'JSON compliant' },
                 ].map((stat, i) => (
                   <div key={i} className="bg-[#111113]/50 p-6 rounded-3xl border border-white/5 flex items-center gap-5 transition-all hover:border-white/10 group animate-message" style={{ animationDelay: `${0.3 + i * 0.1}s` }}>
                     <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-teal-500 group-hover:scale-110 transition-transform">
@@ -587,39 +563,37 @@ export default function App() {
                     <div className="p-2 bg-teal-500/10 rounded-xl">
                       <LayoutDashboard size={20} className="text-teal-500" />
                     </div>
-                    <h3 className="text-xl font-bold tracking-tight">Structured Extraction</h3>
-                  </div>
-                  <div className="flex items-center gap-2 px-3 py-1 bg-teal-500/10 rounded-full border border-teal-500/20">
-                    <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse"></div>
-                    <span className="text-[10px] font-mono text-teal-500 font-bold uppercase tracking-wider">Active Capture</span>
+                    <h3 className="text-xl font-bold tracking-tight">Intelligence Feed</h3>
                   </div>
                 </div>
 
                 <div className="space-y-8 flex-1">
                   {[
-                    { label: 'Recognized Name', value: capturedData.name, placeholder: 'Scanning utterance...' },
-                    { label: 'Detected Intent', value: capturedData.intent, placeholder: 'Categorizing flow...' },
-                    { label: 'Appointment / Time', value: capturedData.dateTime, placeholder: 'Awaiting slot data...' },
-                    { label: 'Parsed Entities', value: capturedData.notes, placeholder: 'Entity parsing...' },
+                    { label: 'Identified Name', value: capturedData.name, placeholder: 'Extracting...' },
+                    { label: 'Call Intent', value: capturedData.intent, placeholder: 'Categorizing...' },
+                    { label: 'Time & Slot', value: capturedData.dateTime, placeholder: 'Booking...' },
+                    { label: 'Actionable Notes', value: capturedData.notes, placeholder: 'Parsing...' },
                   ].map((field, i) => (
                     <div key={i} className="group animate-message" style={{ animationDelay: `${0.5 + i * 0.05}s` }}>
                       <div className="text-[10px] font-black text-slate-600 uppercase tracking-[0.15em] mb-2.5 flex justify-between items-center">
                         {field.label}
                         {field.value && <CheckCircle2 size={12} className="text-teal-500" />}
                       </div>
-                      <div className={`p-4 rounded-2xl border text-[0.95rem] font-bold transition-all duration-700 ${
+                      <div className={`p-4 rounded-2xl border text-[0.95rem] font-bold transition-all duration-700 overflow-hidden ${
                         field.value 
                           ? 'bg-teal-500/5 border-teal-500/20 text-teal-400 shadow-lg shadow-teal-500/5' 
                           : 'bg-black/40 border-white/5 text-slate-700 italic font-medium'
                       }`}>
-                        {field.value || field.placeholder}
+                        <div key={field.value || field.placeholder} className={field.value ? "animate-data-update" : ""}>
+                          {field.value || field.placeholder}
+                        </div>
                       </div>
                     </div>
                   ))}
 
                   <div className="pt-4">
                     <div className="flex justify-between items-end mb-3">
-                      <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Inference Confidence</div>
+                      <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Model Confidence</div>
                       <div className={`text-xs font-black uppercase tracking-tighter transition-colors duration-500 ${
                         capturedData.leadScore === 'High' || capturedData.leadScore === 'Hot' || capturedData.leadScore === 'Resolved' ? 'text-teal-500' : 'text-slate-700'
                       }`}>
@@ -638,7 +612,7 @@ export default function App() {
 
                 <div className="mt-12 p-6 bg-white/[0.02] rounded-2xl border border-white/5 shadow-inner">
                   <p className="text-xs text-slate-500 leading-relaxed text-center font-medium italic">
-                    "Neural logic dynamically populates your CRM schema."
+                    "AI dynamically populates your CRM with studio-grade audio extraction."
                   </p>
                 </div>
               </div>
@@ -646,115 +620,11 @@ export default function App() {
           </div>
         </section>
 
-        <section className="py-32 px-6 bg-[#0a0a0b] relative">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-teal-500/5 rounded-full blur-[120px] pointer-events-none"></div>
-          
-          <div className="max-w-7xl mx-auto relative z-10">
-            <div className="text-center mb-24 animate-message">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-500 text-[10px] font-black uppercase tracking-widest mb-6">
-                Our Methodology
-              </div>
-              <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight leading-tight">
-                A High-Speed <span className="text-teal-500">Path to Autonomy</span>
-              </h2>
-              <p className="text-slate-400 max-w-2xl mx-auto text-lg leading-relaxed font-medium">
-                We translate your business intelligence into complex conversational flows that feel human and act with surgical precision.
-              </p>
-            </div>
-
-            <div className="relative">
-              <div className="hidden lg:block absolute top-[4.5rem] left-[15%] right-[15%] h-[1px] bg-gradient-to-r from-transparent via-teal-500/40 to-transparent z-0"></div>
-
-              <div className="grid lg:grid-cols-3 gap-12 lg:gap-8">
-                {[
-                  {
-                    step: "01",
-                    phase: "Discovery",
-                    title: "Knowledge Mapping",
-                    desc: "We ingest your FAQs, pricing, and brand tone. Our team builds a custom neural knowledge graph that reflects your business perfectly.",
-                    icon: Database,
-                    color: "from-teal-500 to-emerald-500",
-                    shadow: "shadow-teal-500/20"
-                  },
-                  {
-                    step: "02",
-                    phase: "Integration",
-                    title: "Technical Sync",
-                    desc: "We connect your new AI agent to your VoIP provider, CRM (Salesforce/HubSpot), and calendar systems for real-time actions.",
-                    icon: Cpu,
-                    color: "from-blue-500 to-indigo-500",
-                    shadow: "shadow-blue-500/20"
-                  },
-                  {
-                    step: "03",
-                    phase: "Operation",
-                    title: "Live Deployment",
-                    desc: "Your agent goes live. We monitor early interactions, refining logic and audio fidelity based on real-world performance metrics.",
-                    icon: TrendingUp,
-                    color: "from-purple-500 to-pink-500",
-                    shadow: "shadow-purple-500/20"
-                  }
-                ].map((item, i) => (
-                  <div key={i} className="relative group animate-message" style={{ animationDelay: `${0.2 + i * 0.15}s` }}>
-                    <div className="bg-[#111113]/40 border border-white/5 p-10 rounded-[2.5rem] backdrop-blur-xl flex flex-col items-center text-center h-full transition-all duration-500 hover:bg-white/[0.04] hover:border-white/20 hover:-translate-y-2 hover:shadow-2xl">
-                      <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 bg-black border border-white/10 rounded-full text-[11px] font-black tracking-widest text-slate-400 group-hover:text-white transition-colors">
-                        PHASE {item.step}
-                      </div>
-
-                      <div className={`w-24 h-24 rounded-3xl bg-gradient-to-br ${item.color} p-[1px] mb-8 ${item.shadow} group-hover:scale-110 transition-transform duration-500`}>
-                        <div className="w-full h-full bg-black rounded-[calc(1.5rem-1px)] flex items-center justify-center">
-                          <item.icon size={36} className="text-white" />
-                        </div>
-                      </div>
-
-                      <div className="text-[10px] font-black text-teal-500 uppercase tracking-[0.3em] mb-4">{item.phase}</div>
-                      <h3 className="text-2xl font-black mb-5 tracking-tight group-hover:text-white transition-colors">{item.title}</h3>
-                      <p className="text-slate-400 text-sm leading-relaxed max-w-xs font-medium opacity-80 group-hover:opacity-100 transition-opacity">
-                        {item.desc}
-                      </p>
-                      <div className="mt-10 w-12 h-1 bg-white/5 rounded-full overflow-hidden">
-                         <div className={`h-full bg-gradient-to-r ${item.color} w-0 group-hover:w-full transition-all duration-700 ease-out`}></div>
-                      </div>
-                    </div>
-                    {i < 2 && <div className="lg:hidden h-12 w-[1px] bg-gradient-to-b from-white/10 to-transparent mx-auto mt-0"></div>}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-32 pt-20 border-t border-white/5">
-              <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 animate-message">
-                 {[
-                   { icon: Settings2, label: "Custom Logic", desc: "Hard-coded business rules" },
-                   { icon: Zap, label: "0.2s Latency", desc: "Near-instant response time" },
-                   { icon: ShieldCheck, label: "Enterprise Encryption", desc: "SOC2 compliant standards" },
-                   { icon: Layers, label: "Deep Stack", desc: "Vercel + Google Cloud + Twilio" }
-                 ].map((feat, i) => (
-                   <div key={i} className="p-8 rounded-3xl bg-white/[0.01] border border-white/5 flex flex-col gap-6 hover:bg-white/[0.03] transition-all hover:border-white/10 group">
-                     <div className="w-10 h-10 rounded-xl bg-teal-500/5 flex items-center justify-center text-teal-500 border border-teal-500/10 group-hover:bg-teal-500 group-hover:text-black transition-all">
-                       <feat.icon size={20} />
-                     </div>
-                     <div>
-                       <div className="text-xs font-black uppercase tracking-widest text-white mb-2">{feat.label}</div>
-                       <div className="text-xs text-slate-500 font-medium leading-relaxed">{feat.desc}</div>
-                     </div>
-                   </div>
-                 ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="py-32 px-6 bg-[#0a0a0b] border-t border-white/5">
+        <section className="py-20 px-6 bg-[#0a0a0b] border-t border-white/5">
           <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-20 animate-message">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-slate-400 text-[10px] font-black uppercase tracking-widest mb-6">
-                <HelpCircle size={14} className="text-teal-500" /> FAQ
-              </div>
-              <h2 className="text-4xl md:text-5xl font-black mb-6 tracking-tight">Common <span className="text-teal-500">Queries</span></h2>
-              <p className="text-slate-400 text-lg font-medium leading-relaxed">
-                Everything you need to know about the Codify neural conversational engine and deployment process.
-              </p>
+            <div className="text-center mb-16">
+              <h2 className="text-3xl font-black mb-4">Implementation FAQ</h2>
+              <p className="text-slate-400">Deep technical insights into the Codify neural architecture.</p>
             </div>
             <FAQAccordion />
           </div>
@@ -762,11 +632,11 @@ export default function App() {
       </main>
 
       <footer className="py-10 px-6 border-t border-white/5 bg-[#0a0a0b]">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+        <div className="max-w-7xl mx-auto flex justify-center items-center">
           <div className="flex items-center gap-3 text-slate-600">
             <CodifyLogo className="w-6 h-6 opacity-40" />
             <p className="text-[11px] font-bold uppercase tracking-[0.25em] opacity-60">
-              &copy; 2025 CODIFY <span className="text-teal-500 font-black">AI LABS</span>.
+              &copy; 2025 CODIFY AI LABS.
             </p>
           </div>
         </div>
