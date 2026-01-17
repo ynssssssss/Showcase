@@ -139,7 +139,6 @@ const FAQAccordion = () => {
 const HowItWorks = () => {
   return (
     <div className="grid md:grid-cols-3 gap-12 relative">
-      {/* Connecting Line (Desktop) */}
       <div className="hidden md:block absolute top-1/2 left-[10%] right-[10%] h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-y-1/2 z-0" />
       
       {PROCESS_STEPS.map((step, i) => (
@@ -148,9 +147,7 @@ const HowItWorks = () => {
           className="relative z-10 p-10 rounded-[3rem] border border-white/5 bg-[#0A0A0A] hover:bg-[#0D0D0D] transition-all duration-500 group overflow-hidden animate-fade-up"
           style={{ animationDelay: `${i * 150}ms` }}
         >
-          {/* Subtle Glow Background */}
           <div className={`absolute inset-0 bg-gradient-to-b ${step.color} opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
-          
           <div className="relative z-10">
             <div className="w-20 h-20 rounded-2xl bg-white/5 flex items-center justify-center text-teal-400 mb-8 group-hover:scale-110 group-hover:bg-teal-500 group-hover:text-black transition-all duration-500 shadow-inner">
               <step.icon size={36} />
@@ -175,6 +172,7 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const [manualInput, setManualInput] = useState('');
   const [isPlayingMp3, setIsPlayingMp3] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   
   const demoAudioRef = useRef<HTMLAudioElement | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -187,20 +185,47 @@ export default function App() {
     }
   }, [transcript, isTyping]);
 
-  const togglePlayMp3 = () => {
+  useEffect(() => {
+    return () => {
+      if (demoAudioRef.current) {
+        demoAudioRef.current.pause();
+        demoAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  const togglePlayMp3 = async () => {
+    setAudioError(null);
+    
     if (!demoAudioRef.current) {
-      const audio = new Audio();
-      audio.src = DEMO_AUDIO_URL;
+      const audio = new Audio(DEMO_AUDIO_URL);
       audio.onended = () => setIsPlayingMp3(false);
+      audio.onerror = (e) => {
+        console.error("Audio Load Error:", e);
+        setAudioError("Failed to load audio resource.");
+        setIsPlayingMp3(false);
+      };
       demoAudioRef.current = audio;
     }
+
+    const audio = demoAudioRef.current;
+
     if (isPlayingMp3) {
-      demoAudioRef.current.pause();
+      audio.pause();
       setIsPlayingMp3(false);
     } else {
-      demoAudioRef.current.play()
-        .then(() => setIsPlayingMp3(true))
-        .catch(() => console.error("Audio blocked"));
+      try {
+        await audio.play();
+        setIsPlayingMp3(true);
+      } catch (err: any) {
+        console.warn("Playback prevented by browser policy or network issue:", err.name);
+        if (err.name === 'NotAllowedError') {
+          setAudioError("Playback blocked. Please interact with the page first.");
+        } else {
+          setAudioError("Audio playback failed.");
+        }
+        setIsPlayingMp3(false);
+      }
     }
   };
 
@@ -259,7 +284,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col hero-gradient selection:bg-teal-500/30 overflow-x-hidden">
-      {/* Dynamic Header Banner */}
       <div className="bg-teal-500 py-3 text-center overflow-hidden shadow-xl z-50">
         <div className="whitespace-nowrap flex animate-flow gap-12 items-center">
           {[...Array(8)].map((_, i) => (
@@ -284,7 +308,6 @@ export default function App() {
       </header>
 
       <main className="flex-1">
-        {/* Simplified Hero Section */}
         <section className="pt-24 pb-12 px-6 text-center">
           <div className="max-w-4xl mx-auto animate-fade-up">
             <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-teal-500/10 border border-teal-500/20 text-teal-400 text-[10px] font-black uppercase tracking-[0.4em] mb-8">
@@ -300,26 +323,17 @@ export default function App() {
           </div>
         </section>
 
-        {/* Professional Simulation Area */}
         <section className="py-12 px-6">
           <div className="max-w-7xl mx-auto grid lg:grid-cols-12 gap-10">
-            {/* Chat Simulation Area */}
             <div className="lg:col-span-8 flex flex-col min-h-[650px]">
               <div className="glass-panel rounded-[3rem] overflow-hidden flex flex-col flex-1 border border-white/10 shadow-2xl">
-                {/* Header for Simulator */}
                 <div className="px-10 py-6 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-2.5 h-2.5 rounded-full bg-teal-500 animate-pulse"></div>
                     <span className="text-[11px] font-black uppercase tracking-[0.3em] text-teal-500">RILEY ENGINE • LIVE SIMULATION</span>
                   </div>
-                  <div className="flex gap-2">
-                    <div className="w-2 h-2 rounded-full bg-white/10"></div>
-                    <div className="w-2 h-2 rounded-full bg-white/10"></div>
-                    <div className="w-2 h-2 rounded-full bg-white/10"></div>
-                  </div>
                 </div>
 
-                {/* Conversation Scroll */}
                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 md:p-12 space-y-8 scrollbar-hide">
                   {!isCalling ? (
                     <div className="h-full flex flex-col items-center justify-center text-center py-20 animate-fade-up">
@@ -332,39 +346,27 @@ export default function App() {
                       </p>
                       
                       <div className="flex flex-col md:flex-row gap-6 w-full max-w-lg">
-                        <button 
-                          onClick={startDemo}
-                          className="flex-1 bg-white text-black h-16 rounded-2xl font-black hover:bg-teal-500 transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95"
-                        >
+                        <button onClick={startDemo} className="flex-1 bg-white text-black h-16 rounded-2xl font-black hover:bg-teal-500 transition-all flex items-center justify-center gap-3 shadow-xl active:scale-95">
                           <Play size={20} fill="currentColor" /> START DEMO
                         </button>
-                        <button 
-                          onClick={togglePlayMp3}
-                          className={`flex-1 h-16 rounded-2xl font-black border transition-all flex items-center justify-center gap-3 ${
-                            isPlayingMp3 ? 'bg-teal-500 border-teal-500 text-black' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
-                          }`}
-                        >
-                          {isPlayingMp3 ? <Pause size={20} fill="currentColor" /> : <Phone size={20} />}
-                          {isPlayingMp3 ? 'PLAYING...' : 'AUDIO SAMPLE'}
-                        </button>
+                        <div className="flex-1 flex flex-col gap-2">
+                          <button onClick={togglePlayMp3} className={`w-full h-16 rounded-2xl font-black border transition-all flex items-center justify-center gap-3 ${isPlayingMp3 ? 'bg-teal-500 border-teal-500 text-black' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>
+                            {isPlayingMp3 ? <Pause size={20} fill="currentColor" /> : <Phone size={20} />}
+                            {isPlayingMp3 ? 'PLAYING...' : 'AUDIO SAMPLE'}
+                          </button>
+                          {audioError && <p className="text-[10px] text-red-400 font-bold uppercase tracking-wider">{audioError}</p>}
+                        </div>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-10">
-                      {transcript.map((msg, i) => {
-                        const isAgent = msg.sender === 'agent';
-                        return (
-                          <div key={i} className={`flex ${isAgent ? 'justify-start' : 'justify-end'} animate-fade-up`}>
-                            <div className={`max-w-[85%] rounded-[2rem] px-8 py-5 text-lg leading-relaxed font-medium shadow-xl ${
-                              isAgent 
-                                ? 'bg-white/[0.04] border border-white/5 text-slate-100' 
-                                : 'bg-teal-500 text-black font-black'
-                            }`}>
-                              {isAgent && i === transcript.length - 1 ? <TypewriterText text={msg.text} /> : msg.text}
-                            </div>
+                      {transcript.map((msg, i) => (
+                        <div key={i} className={`flex ${msg.sender === 'agent' ? 'justify-start' : 'justify-end'} animate-fade-up`}>
+                          <div className={`max-w-[85%] rounded-[2rem] px-8 py-5 text-lg leading-relaxed font-medium shadow-xl ${msg.sender === 'agent' ? 'bg-white/[0.04] border border-white/5 text-slate-100' : 'bg-teal-500 text-black font-black'}`}>
+                            {msg.sender === 'agent' && i === transcript.length - 1 ? <TypewriterText text={msg.text} /> : msg.text}
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                       {isTyping && (
                         <div className="flex justify-start">
                           <div className="bg-white/[0.04] border border-white/5 rounded-2xl px-6 py-4 flex gap-2">
@@ -378,7 +380,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Control Bar */}
                 {isCalling && (
                   <div className="p-8 border-t border-white/5 bg-black/60 backdrop-blur-xl">
                     {currentStepIndex + 1 < SCENARIO.steps.length ? (
@@ -389,7 +390,7 @@ export default function App() {
                           </div>
                           <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-50">Simulation Context</p>
-                            <p className="text-sm font-bold text-white italic">"{SCENARIO.steps[currentStepIndex + 1].text}"</p>
+                            <p className="text-sm font-bold text-white italic">"{currentStep?.text}"</p>
                           </div>
                         </div>
                         <div className="flex gap-4 w-full md:w-auto">
@@ -400,23 +401,15 @@ export default function App() {
                                 value={manualInput}
                                 onChange={(e) => setManualInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && manualInput && !isTyping && nextStep(manualInput)}
-                                placeholder="Type patient response..."
+                                placeholder="Type response..."
                                 className="w-full h-14 bg-white/5 border border-white/10 rounded-xl px-6 text-sm font-bold focus:outline-none focus:border-teal-500 transition-all"
                               />
-                              <button 
-                                onClick={() => manualInput && !isTyping && nextStep(manualInput)}
-                                disabled={isTyping || !manualInput}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-teal-500 text-black rounded-lg hover:bg-white transition-all disabled:opacity-30 flex items-center justify-center"
-                              >
+                              <button onClick={() => manualInput && !isTyping && nextStep(manualInput)} disabled={isTyping || !manualInput} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-teal-500 text-black rounded-lg hover:bg-white transition-all disabled:opacity-30 flex items-center justify-center">
                                 <Send size={18} />
                               </button>
                             </div>
                           ) : (
-                            <button 
-                              onClick={() => !isTyping && nextStep()}
-                              disabled={isTyping}
-                              className="w-full md:w-auto px-10 h-14 bg-teal-500 text-black rounded-xl font-black hover:bg-white transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-30"
-                            >
+                            <button onClick={() => !isTyping && nextStep()} disabled={isTyping} className="w-full md:w-auto px-10 h-14 bg-teal-500 text-black rounded-xl font-black hover:bg-white transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-30">
                               NEXT STEP <ChevronRight size={20} />
                             </button>
                           )}
@@ -434,7 +427,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Live Data Sidebar */}
             <div className="lg:col-span-4 space-y-8">
               <div className="glass-panel rounded-[3rem] p-10 border border-white/10 shadow-2xl h-full flex flex-col">
                 <div className="flex items-center gap-4 mb-12">
@@ -446,7 +438,7 @@ export default function App() {
 
                 <div className="space-y-10 flex-1">
                   {[
-                    { label: 'Patient Name', value: capturedData.name, icon: User },
+                    { label: 'Name', value: capturedData.name, icon: User },
                     { label: 'Neural Intent', value: capturedData.intent, icon: Brain },
                     { label: 'Extracted Logic', value: capturedData.notes, icon: Binary },
                   ].map((field, i) => (
@@ -455,9 +447,7 @@ export default function App() {
                         <field.icon size={14} className="text-teal-500" />
                         {field.label}
                       </div>
-                      <div className={`p-5 rounded-2xl border font-bold text-base transition-all duration-700 ${
-                        field.value ? 'bg-teal-500/5 border-teal-500/20 text-teal-400' : 'bg-black/40 border-white/5 text-slate-700 italic'
-                      }`}>
+                      <div className={`p-5 rounded-2xl border font-bold text-base transition-all duration-700 ${field.value ? 'bg-teal-500/5 border-teal-500/20 text-teal-400' : 'bg-black/40 border-white/5 text-slate-700 italic'}`}>
                         {field.value || 'Waiting for stream...'}
                       </div>
                     </div>
@@ -476,18 +466,11 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-
-                <div className="mt-12 p-6 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
-                  <p className="text-[10px] text-slate-600 font-black uppercase tracking-[0.2em]">
-                    REAL-TIME SYNC ACTIVE
-                  </p>
-                </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Improved How It Works Section */}
         <section className="py-32 px-6 border-t border-white/5 bg-black/40 overflow-hidden">
           <div className="max-w-7xl mx-auto">
             <div className="text-center mb-24">
@@ -498,7 +481,6 @@ export default function App() {
           </div>
         </section>
 
-        {/* FAQ Section */}
         <section className="py-24 px-6 bg-black/20">
           <div className="max-w-4xl mx-auto">
             <h2 className="text-4xl font-black tracking-tight text-center mb-16 uppercase italic">Deployment Faq</h2>
@@ -510,12 +492,6 @@ export default function App() {
       <footer className="py-24 px-6 border-t border-white/5 bg-[#050505] text-center">
         <div className="max-w-4xl mx-auto">
           <span className="text-3xl font-black tracking-tighter uppercase mb-12 block">Codify <span className="text-teal-500">AI Labs</span></span>
-          <div className="p-8 rounded-[2rem] bg-teal-500/5 border border-teal-500/10 inline-block mb-12">
-            <p className="text-[11px] font-black text-teal-500 uppercase tracking-[0.4em] mb-4">SHOWCASE DISCLAIMER</p>
-            <p className="text-xs text-slate-500 font-bold leading-loose tracking-widest uppercase opacity-80 max-w-2xl mx-auto">
-              This environment is a technical demonstration of conversational interface logic. The final production-grade product features significantly enhanced capabilities including ultra-low latency voice synthesis, global telecom carrier routing, and industry-standard security compliance.
-            </p>
-          </div>
           <p className="text-[10px] font-black text-slate-800 uppercase tracking-[0.6em] mt-12">
             &copy; 2025 CODIFY AI LABS • ALL RIGHTS RESERVED
           </p>
