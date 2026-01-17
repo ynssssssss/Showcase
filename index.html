@@ -5,64 +5,46 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Codify | AI Voice Agents that Book 24/7</title>
-
-    <!-- Tailwind CDN (OK for landing pages) -->
     <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- Fonts -->
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
-      rel="stylesheet"
-    />
-
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
       body {
-        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
         scroll-behavior: smooth;
       }
-
       .scrollbar-hide::-webkit-scrollbar {
         display: none;
       }
-
       .scrollbar-hide {
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
-
+      
       @keyframes message-in {
-        0% {
-          opacity: 0;
-          transform: translateY(10px) scale(0.98);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
+        0% { opacity: 0; transform: translateY(10px) scale(0.98); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
       }
 
       @keyframes data-slide-up {
-        0% {
-          opacity: 0;
-          transform: translateY(8px);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        0% { opacity: 0; transform: translateY(8px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+      
+      @keyframes soft-bg-pulse {
+        0% { background-color: rgba(20, 184, 166, 0.1); }
+        50% { background-color: rgba(20, 184, 166, 0.25); border-color: rgba(20, 184, 166, 0.4); }
+        100% { background-color: rgba(20, 184, 166, 0.1); }
       }
 
-      @keyframes soft-bg-pulse {
-        0% {
-          background-color: rgba(20, 184, 166, 0.1);
-        }
-        50% {
-          background-color: rgba(20, 184, 166, 0.25);
-          border-color: rgba(20, 184, 166, 0.4);
-        }
-        100% {
-          background-color: rgba(20, 184, 166, 0.1);
-        }
+      @keyframes flow-line {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+
+      @keyframes glow-pulse {
+        0% { filter: drop-shadow(0 0 2px rgba(20, 184, 166, 0.5)); }
+        50% { filter: drop-shadow(0 0 10px rgba(20, 184, 166, 0.8)); }
+        100% { filter: drop-shadow(0 0 2px rgba(20, 184, 166, 0.5)); }
       }
 
       .animate-message {
@@ -77,6 +59,16 @@
         animation: soft-bg-pulse 2s infinite ease-in-out;
       }
 
+      .animate-flow {
+        background: linear-gradient(90deg, transparent 0%, #14b8a6 50%, transparent 100%);
+        background-size: 200% 100%;
+        animation: flow-line 3s linear infinite;
+      }
+
+      .animate-glow {
+        animation: glow-pulse 3s infinite ease-in-out;
+      }
+
       .glass-card {
         background: rgba(17, 17, 19, 0.7);
         backdrop-filter: blur(12px);
@@ -84,22 +76,30 @@
       }
 
       .agent-bubble {
+        position: relative;
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.08);
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
       }
 
       .user-bubble {
-        background: #14b8a6;
+        background: #14b8a6; /* teal-500 */
         box-shadow: 0 8px 20px rgba(20, 184, 166, 0.15);
       }
     </style>
-  </head>
-
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0"
+  }
+}
+</script>
+</head>
   <body class="bg-[#0a0a0b] text-slate-100">
     <div id="root"></div>
-
-    <!-- ✅ THIS IS THE CRITICAL LINE -->
-    <script type="module" src="/main.tsx"></script>
   </body>
 </html>

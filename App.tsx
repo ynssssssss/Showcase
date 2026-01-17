@@ -20,7 +20,11 @@ import {
   Layers,
   HelpCircle,
   Send,
-  User
+  User,
+  Mic,
+  Brain,
+  Binary,
+  CalendarCheck
 } from 'lucide-react';
 import { GoogleGenAI, Modality } from "@google/genai";
 import { Scenario, CapturedData, DemoStep } from './types';
@@ -615,6 +619,55 @@ export default function App() {
                     "AI dynamically populates your CRM with studio-grade audio extraction."
                   </p>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Neural Workflow Visualization Section */}
+        <section className="py-24 px-6 relative overflow-hidden bg-gradient-to-b from-[#0a0a0b] to-[#0d0d0f]">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center mb-16 relative">
+              <span className="text-teal-500 text-[10px] font-black uppercase tracking-[0.4em] mb-4 block">Engine Architecture</span>
+              <h2 className="text-3xl md:text-5xl font-black mb-6 tracking-tight">The Neural Pipeline</h2>
+              <p className="text-slate-400 max-w-2xl mx-auto text-lg leading-relaxed">
+                Our proprietary stack converts raw human interaction into structured business intelligence in under 150ms.
+              </p>
+            </div>
+
+            <div className="relative grid md:grid-cols-4 gap-8">
+              {/* Animated Connecting Flow Lines */}
+              <div className="hidden md:block absolute top-1/2 left-0 w-full h-0.5 -translate-y-1/2 z-0 opacity-20">
+                <div className="w-full h-full animate-flow"></div>
+              </div>
+
+              {[
+                { icon: Mic, title: 'Voice Ingest', desc: 'Real-time high-fidelity audio stream capture.' },
+                { icon: Brain, title: 'Neural Logic', desc: 'Intent classification & semantic triaging.' },
+                { icon: Binary, title: 'JSON Extraction', desc: 'Context-aware structured data parsing.' },
+                { icon: CalendarCheck, title: 'CRM Sync', desc: 'Autonomous system update & booking.' }
+              ].map((step, i) => (
+                <div key={i} className="relative z-10 group">
+                  <div className="bg-[#111113] border border-white/5 rounded-3xl p-8 hover:border-teal-500/30 transition-all duration-500 flex flex-col items-center text-center h-full hover:shadow-[0_0_30px_rgba(20,184,166,0.05)] transform hover:-translate-y-2">
+                    <div className="w-16 h-16 bg-teal-500/10 rounded-2xl flex items-center justify-center text-teal-500 mb-6 group-hover:scale-110 transition-transform animate-glow shadow-[0_0_15px_rgba(20,184,166,0.1)]">
+                      <step.icon size={32} />
+                    </div>
+                    <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-3">Step 0{i+1}</div>
+                    <h4 className="text-xl font-bold mb-4 tracking-tight text-white">{step.title}</h4>
+                    <p className="text-sm text-slate-500 leading-relaxed font-medium">
+                      {step.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-20 flex justify-center">
+              <div className="px-8 py-4 bg-teal-500/5 rounded-2xl border border-teal-500/10 flex items-center gap-4 animate-message">
+                <TrendingUp size={20} className="text-teal-500" />
+                <span className="text-sm font-bold text-slate-300">
+                  <span className="text-teal-500">98.4%</span> Data extraction accuracy across all native models.
+                </span>
               </div>
             </div>
           </div>
